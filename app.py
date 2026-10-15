@@ -361,8 +361,14 @@ def render_v1(leagues, positions, age_range, selected):
         fig.add_shape(type="line", x0=0, y0=0, x1=max_val, y1=max_val,
                       line=dict(color="#555577", width=1, dash="dot"))
         fig.add_annotation(x=max_val * 0.85, y=max_val * 0.78,
-                           text="Goals = xG", showarrow=False,
-                           font=dict(color="#666688", size=10))
+                      text="Goals = xG", showarrow=False,
+                      font=dict(color="#666688", size=10))
+        fig.add_annotation(x=max_val * 0.72, y=max_val * 0.88,
+                      text="↑ Outperformed xG", showarrow=False,
+                      font=dict(color="#aaaaaa", size=10))
+        fig.add_annotation(x=max_val * 0.88, y=max_val * 0.68,
+                      text="↓ Underperformed xG", showarrow=False,
+                      font=dict(color="#aaaaaa", size=10))
 
     fig.update_layout(
         title=dict(text="Goals vs Expected Goals",
