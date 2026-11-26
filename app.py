@@ -146,20 +146,6 @@ app.index_string = '''<!DOCTYPE html>
   .Select--multi .Select-value { background-color: #3e3e5e !important; border-color: #5e5e7e !important; }
   .Select--multi .Select-value-icon { border-right-color: #5e5e7e !important; }
   .Select--multi .Select-value-icon:hover { background-color: #5e5e8e !important; color: #ffffff !important; }
-  .custom-dropdown { position: relative; }
-  .custom-dropdown .dropdown-panel {
-    display: none; position: absolute; top: 100%; left: 0; right: 0;
-    z-index: 999; background-color: #2a2a3e; border: 1px solid #3e3e5e;
-    border-radius: 4px; padding: 8px 12px; margin-top: 2px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-  }
-  .custom-dropdown:focus-within .dropdown-panel { display: block; }
-  .custom-dropdown .dropdown-panel label {
-    display: block; padding: 6px 0; cursor: pointer; color: #ffffff; font-size: 13px;
-  }
-  .custom-dropdown .dropdown-panel input[type="checkbox"] {
-    margin-right: 8px; accent-color: #4a90d9;
-  }
 </style>
 </head>
 <body>{%app_entry%}<footer>{%config%}{%scripts%}{%renderer%}</footer></body>
@@ -189,57 +175,49 @@ app.layout = html.Div(
             ),
         ], style={"marginBottom": "20px"}),
 
+        # Active filters summary — shows selections in short form
+        html.Div(
+            id="filter-summary",
+            children="Active filters  →  Leagues: all  ·  Positions: all  ·  Age: all",
+            style={"color": "#cccccc", "fontSize": "12px",
+                   "padding": "10px 16px", "marginBottom": "10px",
+                   "backgroundColor": "#1a1a2e", "borderRadius": "6px",
+                   "border": "1px solid #2e2e42"},
+        ),
+
         # Filter bar — Gestalt: proximity groups all controls together
         html.Div([
             html.Div([
                 html.Label("League", style={"color": "#aaaaaa", "fontSize": "12px",
                                             "marginBottom": "4px", "display": "block"}),
-                html.Div([
-                    html.Div("All leagues", id="league-display", tabIndex=0,
-                             style={"backgroundColor": "#2a2a3e", "color": "#888888",
-                                    "padding": "8px 12px", "borderRadius": "4px",
-                                    "cursor": "pointer", "fontSize": "13px",
-                                    "minHeight": "36px", "display": "flex",
-                                    "alignItems": "center", "outline": "none"}),
-                    html.Div([
-                        dcc.Checklist(
-                            id="filter-league",
-                            options=[
-                                {"label": " Premier League (PL)", "value": "Premier League"},
-                                {"label": " La Liga (LL)",        "value": "La Liga"},
-                                {"label": " Bundesliga (BL)",     "value": "Bundesliga"},
-                                {"label": " Serie A (SA)",        "value": "Serie A"},
-                                {"label": " Ligue 1 (L1)",        "value": "Ligue 1"},
-                            ],
-                            value=[],
-                        ),
-                    ], className="dropdown-panel"),
-                ], className="custom-dropdown"),
+                dcc.Dropdown(
+                    id="filter-league",
+                    options=[
+                        {"label": "Premier League (PL)", "value": "Premier League"},
+                        {"label": "La Liga (LL)",        "value": "La Liga"},
+                        {"label": "Bundesliga (BL)",     "value": "Bundesliga"},
+                        {"label": "Serie A (SA)",        "value": "Serie A"},
+                        {"label": "Ligue 1 (L1)",        "value": "Ligue 1"},
+                    ],
+                    multi=True,
+                    placeholder="All leagues",
+                ),
             ], style={"flex": "1", "marginRight": "12px"}),
 
             html.Div([
                 html.Label("Position", style={"color": "#aaaaaa", "fontSize": "12px",
                                               "marginBottom": "4px", "display": "block"}),
-                html.Div([
-                    html.Div("All positions", id="position-display", tabIndex=0,
-                             style={"backgroundColor": "#2a2a3e", "color": "#888888",
-                                    "padding": "8px 12px", "borderRadius": "4px",
-                                    "cursor": "pointer", "fontSize": "13px",
-                                    "minHeight": "36px", "display": "flex",
-                                    "alignItems": "center", "outline": "none"}),
-                    html.Div([
-                        dcc.Checklist(
-                            id="filter-position",
-                            options=[
-                                {"label": " Forwards (FW)",    "value": "FW"},
-                                {"label": " Midfielders (MF)", "value": "MF"},
-                                {"label": " Defenders (DF)",   "value": "DF"},
-                                {"label": " Goalkeepers (GK)", "value": "GK"},
-                            ],
-                            value=[],
-                        ),
-                    ], className="dropdown-panel"),
-                ], className="custom-dropdown"),
+                dcc.Dropdown(
+                    id="filter-position",
+                    options=[
+                        {"label": "Forwards (FW)",    "value": "FW"},
+                        {"label": "Midfielders (MF)", "value": "MF"},
+                        {"label": "Defenders (DF)",   "value": "DF"},
+                        {"label": "Goalkeepers (GK)", "value": "GK"},
+                    ],
+                    multi=True,
+                    placeholder="All positions",
+                ),
             ], style={"flex": "1", "marginRight": "12px"}),
 
             html.Div([
@@ -256,7 +234,7 @@ app.layout = html.Div(
             ], style={"flex": "2", "marginRight": "12px"}),
 
             html.Div([
-                html.Label("\u00a0", style={"fontSize": "12px", "display": "block",
+                html.Label(" ", style={"fontSize": "12px", "display": "block",
                                             "marginBottom": "4px"}),
                 html.Button("✕  Reset All", id="btn-reset", n_clicks=0,
                             style={
@@ -312,40 +290,41 @@ def update_age_label(val):
     return f"Age  {val[0]}–{val[1]}"
 
 
+# 6a-2. Summary bar — shows active filters in short form
 @app.callback(
-    Output("league-display", "children"),
-    Output("league-display", "style"),
-    Input("filter-league", "value"),
-)
-def update_league_display(vals):
-    base = {"backgroundColor": "#2a2a3e", "padding": "8px 12px",
-            "borderRadius": "4px", "cursor": "pointer", "fontSize": "13px",
-            "minHeight": "36px", "display": "flex", "alignItems": "center",
-            "outline": "none"}
-    if not vals:
-        return "All leagues", {**base, "color": "#888888"}
-    short = {"Premier League": "PL", "La Liga": "LL", "Bundesliga": "BL",
-             "Serie A": "SA", "Ligue 1": "L1"}
-    order = {"Premier League": 0, "La Liga": 1, "Bundesliga": 2, "Serie A": 3, "Ligue 1": 4}
-    sorted_v = sorted(vals, key=lambda v: order.get(v, 99))
-    return ", ".join(short.get(v, v) for v in sorted_v), {**base, "color": "#ffffff"}
-
-
-@app.callback(
-    Output("position-display", "children"),
-    Output("position-display", "style"),
+    Output("filter-summary", "children"),
+    Input("filter-league",   "value"),
     Input("filter-position", "value"),
+    Input("filter-age",      "value"),
 )
-def update_position_display(vals):
-    base = {"backgroundColor": "#2a2a3e", "padding": "8px 12px",
-            "borderRadius": "4px", "cursor": "pointer", "fontSize": "13px",
-            "minHeight": "36px", "display": "flex", "alignItems": "center",
-            "outline": "none"}
-    if not vals:
-        return "All positions", {**base, "color": "#888888"}
-    order = {"FW": 0, "MF": 1, "DF": 2, "GK": 3}
-    sorted_v = sorted(vals, key=lambda v: order.get(v, 99))
-    return ", ".join(sorted_v), {**base, "color": "#ffffff"}
+def update_filter_summary(leagues, positions, age_range):
+    # Leagues
+    if leagues:
+        short = {"Premier League": "PL", "La Liga": "LL", "Bundesliga": "BL",
+                 "Serie A": "SA", "Ligue 1": "L1"}
+        order = {"Premier League": 0, "La Liga": 1, "Bundesliga": 2,
+                 "Serie A": 3, "Ligue 1": 4}
+        sorted_v = sorted(leagues, key=lambda v: order.get(v, 99))
+        league_str = "Leagues: " + ", ".join(short.get(v, v) for v in sorted_v)
+    else:
+        league_str = "Leagues: all"
+
+    # Positions
+    if positions:
+        order = {"FW": 0, "MF": 1, "DF": 2, "GK": 3}
+        sorted_p = sorted(positions, key=lambda v: order.get(v, 99))
+        position_str = "Positions: " + ", ".join(sorted_p)
+    else:
+        position_str = "Positions: all"
+
+    # Age
+    if age_range and (age_range[0] != AGE_MIN or age_range[1] != AGE_MAX):
+        age_str = f"Age: {age_range[0]}–{age_range[1]}"
+    else:
+        age_str = "Age: all"
+
+    return f"Active filters  →  {league_str}  ·  {position_str}  ·  {age_str}"
+
 
 # 6b. Reset button → clear filters
 @app.callback(
