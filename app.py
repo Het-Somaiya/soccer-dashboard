@@ -460,15 +460,15 @@ def render_v1(leagues, positions, age_range, selected):
         max_val = max(fdf["Expected_xG"].max(), fdf["Performance_Gls"].max(), 1)
         fig.add_shape(type="line", x0=0, y0=0, x1=max_val, y1=max_val,
                       line=dict(color="#555577", width=1, dash="dot"))
-        fig.add_annotation(x=max_val * 0.85, y=max_val * 0.78,
-                      text="Goals = xG", showarrow=False,
-                      font=dict(color="#666688", size=10))
-        fig.add_annotation(x=max_val * 0.72, y=max_val * 0.88,
-                      text="↑ Outperformed xG", showarrow=False,
-                      font=dict(color="#aaaaaa", size=10))
-        fig.add_annotation(x=max_val * 0.88, y=max_val * 0.68,
-                      text="↓ Underperformed xG", showarrow=False,
-                      font=dict(color="#aaaaaa", size=10))
+        #fig.add_annotation(x=max_val * 0.85, y=max_val * 0.78,
+        #              text="Goals = xG", showarrow=False,
+        #              font=dict(color="#666688", size=10))
+        #fig.add_annotation(x=max_val * 0.72, y=max_val * 0.88,
+        #              text="↑ Outperformed xG", showarrow=False,
+        #              font=dict(color="#aaaaaa", size=10))
+        #fig.add_annotation(x=max_val * 0.88, y=max_val * 0.68,
+        #              text="↓ Underperformed xG", showarrow=False,
+        #              font=dict(color="#aaaaaa", size=10))
 
     # Size legend — invisible markers shown only in legend
     for mins, sz, label in [(500, 7, "500 min"), (1500, 11, "1,500 min"), (3000, 16, "3,000 min")]:
