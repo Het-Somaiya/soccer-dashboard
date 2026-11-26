@@ -146,6 +146,7 @@ app.index_string = '''<!DOCTYPE html>
   .Select--multi .Select-value { background-color: #3e3e5e !important; border-color: #5e5e7e !important; }
   .Select--multi .Select-value-icon { border-right-color: #5e5e7e !important; }
   .Select--multi .Select-value-icon:hover { background-color: #5e5e8e !important; color: #ffffff !important; }
+  .Select--multi .Select-value-label { font-size: 11px !important; }
 </style>
 </head>
 <body>{%app_entry%}<footer>{%config%}{%scripts%}{%renderer%}</footer></body>
@@ -182,10 +183,16 @@ app.layout = html.Div(
                                             "marginBottom": "4px", "display": "block"}),
                 dcc.Dropdown(
                     id="filter-league",
-                    options=[{"label": l, "value": l} for l in LEAGUES],
+                    options=[
+                        {"label": "PL — Premier League", "value": "Premier League"},
+                        {"label": "LL — La Liga",        "value": "La Liga"},
+                        {"label": "BL — Bundesliga",     "value": "Bundesliga"},
+                        {"label": "SA — Serie A",        "value": "Serie A"},
+                        {"label": "L1 — Ligue 1",        "value": "Ligue 1"},
+                    ],
                     multi=True, placeholder="All leagues",
-                    style={"backgroundColor": "#2a2a3e", "color": "#ffffff",
-                           "border": "none", "fontSize": "13px"},
+                    style={"backgroundColor": "#2a2a3e", "color": "#ffffff", 
+                          "border": "none", "fontSize": "13px"},
                 ),
             ], style={"flex": "1", "marginRight": "12px"}),
 
@@ -194,7 +201,12 @@ app.layout = html.Div(
                                               "marginBottom": "4px", "display": "block"}),
                 dcc.Dropdown(
                     id="filter-position",
-                    options=[{"label": p, "value": p} for p in POSITIONS],
+                    options=[
+                        {"label": "FW — Forwards",    "value": "FW"},
+                        {"label": "MF — Midfielders", "value": "MF"},
+                        {"label": "DF — Defenders",   "value": "DF"},
+                        {"label": "GK — Goalkeepers", "value": "GK"},
+                    ],
                     multi=True, placeholder="All positions",
                     style={"backgroundColor": "#2a2a3e", "color": "#ffffff",
                            "border": "none", "fontSize": "13px"},
