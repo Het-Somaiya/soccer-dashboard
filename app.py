@@ -26,8 +26,10 @@ from dash import Dash, dcc, html, Input, Output, State, callback_context, no_upd
 
 df = pd.read_csv("data.csv", quotechar='"')
 
-# Standardise position: strip stray quote chars, keep only valid positions
+# Standardise position: strip stray quote chars, take primary position for
+# dual-listed players (e.g. "FW,MF" → "FW") so no data is dropped.
 df["Position"] = df["Position"].str.strip().str.strip('"')
+df["Position"] = df["Position"].str.split(",").str[0].str.strip()
 df = df[df["Position"].isin(["FW", "MF", "DF", "GK"])].copy()
 
 # Standardise competition names
@@ -37,7 +39,7 @@ df["Competition"] = df["Competition"].str.strip().str.strip('"')
 NUMERIC_COLS = [
     "Performance_Gls", "Expected_xG", "Age",
     "Per 90 Minutes_Gls", "Performance_Ast", "Performance_G+A",
-    "Expected_npxG", "Expected_xAG",
+    "Expected_npxG", "Expected_xAG", "Playing Time_Min",
 ]
 for col in NUMERIC_COLS:
     df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -45,9 +47,19 @@ for col in NUMERIC_COLS:
 # Drop rows missing key numeric columns
 KEY_COLS = [
     "Performance_Gls", "Expected_xG", "Age",
-    "Per 90 Minutes_Gls", "Performance_Ast", "Performance_G+A"
+    "Per 90 Minutes_Gls", "Performance_Ast", "Performance_G+A",
+    "Playing Time_Min",
 ]
 df = df.dropna(subset=KEY_COLS)
+
+# Ordinal field: age bands with a natural order (youngest → oldest)
+AGE_BAND_ORDER = ["17–21", "22–25", "26–29", "30+"]
+df["Age Band"] = pd.cut(
+    df["Age"],
+    bins=[16, 21, 25, 29, 99],
+    labels=AGE_BAND_ORDER,
+)
+df["Age Band"] = pd.Categorical(df["Age Band"], categories=AGE_BAND_ORDER, ordered=True)
 
 # Reset index so iloc and loc align cleanly
 df = df.reset_index(drop=True)
@@ -66,7 +78,7 @@ AGE_MIN = int(df["Age"].min())
 AGE_MAX = int(df["Age"].max())
 
 # ── 2. COLOUR PALETTES ────────────────────────────────────────────────────────
-# ColorBrewer Set1 (4 colours) — colorblind-safe, distinct lightness for greyscale
+# Position colours (ColorBrewer Set1, 4 hues): used only in V1 scatter + V3 strip
 POSITION_COLORS = {
     "FW": "#e41a1c",   # red
     "MF": "#377eb8",   # blue
@@ -74,13 +86,21 @@ POSITION_COLORS = {
     "GK": "#ff7f00",   # orange
 }
 
-# ColorBrewer Dark2 (5 colours) — colorblind-safe
+# League colours: no greens or oranges — avoids cross-view collision with position palette
 LEAGUE_COLORS = {
-    "Premier League": "#1b9e77",
-    "La Liga":        "#d95f02",
-    "Bundesliga":     "#7570b3",
-    "Serie A":        "#e7298a",
-    "Ligue 1":        "#66a61e",
+    "Premier League": "#7570b3",   # muted purple
+    "La Liga":        "#e7298a",   # magenta / pink
+    "Bundesliga":     "#1f78b4",   # steel blue
+    "Serie A":        "#b15928",   # brown
+    "Ligue 1":        "#cab2d6",   # lavender
+}
+
+# Age-band sequential ramp (light → dark) for ordinal encoding in V3
+AGE_BAND_COLORS = {
+    "17–21": "#c6dbef",   # lightest blue
+    "22–25": "#6baed6",
+    "26–29": "#2171b5",
+    "30+":   "#084594",   # darkest blue
 }
 
 POSITIONS = ["FW", "MF", "DF", "GK"]
@@ -99,6 +119,7 @@ AXIS_STYLE  = dict(
     gridcolor="#2e2e42",
     zerolinecolor="#3e3e5e",
     tickfont=dict(color="#aaaaaa", size=11),
+    title_font=dict(color="#cccccc", size=12),
 )
 PLOT_BG    = "#16162a"
 PAPER_BG   = "#1e1e2e"
@@ -111,6 +132,24 @@ _jitter_map = {idx: random.uniform(-0.3, 0.3) for idx in df.index}
 # ── 4. APP ────────────────────────────────────────────────────────────────────
 app = Dash(__name__, title="Big 5 Soccer Explorer")
 server = app.server   # exposed for Render / Gunicorn
+
+# Fix dropdown text visibility (white-on-white issue)
+app.index_string = '''<!DOCTYPE html>
+<html>
+<head>{%metas%}<title>{%title%}</title>{%favicon%}{%css%}
+<style>
+  .Select-value-label, .Select-value { color: #ffffff !important; }
+  .Select-placeholder { color: #888888 !important; }
+  .Select-input > input { color: #ffffff !important; }
+  .VirtualizedSelectOption { color: #222222 !important; }
+  .VirtualizedSelectFocusedOption { background-color: #4a90d9 !important; color: #ffffff !important; }
+  .Select--multi .Select-value { background-color: #3e3e5e !important; border-color: #5e5e7e !important; }
+  .Select--multi .Select-value-icon { border-right-color: #5e5e7e !important; }
+  .Select--multi .Select-value-icon:hover { background-color: #5e5e8e !important; color: #ffffff !important; }
+</style>
+</head>
+<body>{%app_entry%}<footer>{%config%}{%scripts%}{%renderer%}</footer></body>
+</html>'''
 
 # ── 5. LAYOUT ─────────────────────────────────────────────────────────────────
 app.layout = html.Div(
@@ -332,17 +371,22 @@ def render_v1(leagues, positions, age_range, selected):
         if sub.empty:
             continue
         opac = opacity_list(sub.index, selected)
+        # Size encodes Minutes Played: scale 1–3420 min → 5–18 px
+        sizes = sub["Playing Time_Min"].apply(
+            lambda m: max(5, min(18, 5 + (m / 3420) * 13))
+        ).tolist()
         fig.add_trace(go.Scatter(
             x=sub["Expected_xG"],
             y=sub["Performance_Gls"],
             mode="markers",
             name=pos,
             customdata=list(zip(
-                sub.index, sub["Player"], sub["Squad"], sub["League"], sub["Age"]
+                sub.index, sub["Player"], sub["Squad"], sub["League"],
+                sub["Age"], sub["Playing Time_Min"]
             )),
             marker=dict(
                 color=POSITION_COLORS[pos],
-                size=sub["Age"].apply(lambda a: max(6, (a - 16) * 0.9)).tolist(),
+                size=sizes,
                 opacity=opac,
                 line=dict(width=0.4, color="#ffffff"),
             ),
@@ -351,6 +395,7 @@ def render_v1(leagues, positions, age_range, selected):
                 "Club: %{customdata[2]}<br>"
                 "League: %{customdata[3]}<br>"
                 "Age: %{customdata[4]}<br>"
+                "Minutes: %{customdata[5]:.0f}<br>"
                 "Goals: %{y}<br>"
                 "xG: %{x:.2f}<extra></extra>"
             ),
@@ -370,17 +415,26 @@ def render_v1(leagues, positions, age_range, selected):
                       text="↓ Underperformed xG", showarrow=False,
                       font=dict(color="#aaaaaa", size=10))
 
+    # Size legend — invisible markers shown only in legend
+    for mins, sz, label in [(500, 7, "500 min"), (1500, 11, "1,500 min"), (3000, 16, "3,000 min")]:
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None], mode="markers", name=label,
+            marker=dict(size=sz, color="#aaaaaa", line=dict(width=0.4, color="#ffffff")),
+            legendgroup="size", legendgrouptitle_text="Minutes Played",
+            showlegend=True,
+        ))
+
     fig.update_layout(
-        title=dict(text="Goals vs Expected Goals",
+        title=dict(text="Goals vs Expected Goals  (dot size = minutes played)",
                    font=dict(color=FONT_COLOR, size=14), x=0, xanchor="left"),
         xaxis=dict(title="Expected Goals (xG)", **AXIS_STYLE),
         yaxis=dict(title="Goals Scored", **AXIS_STYLE),
         plot_bgcolor=PLOT_BG, paper_bgcolor=PAPER_BG,
         font=dict(color=FONT_COLOR, family=FONT_FAMILY),
-        legend=dict(title="Position", font=dict(color=FONT_COLOR, size=11),
-                    bgcolor="rgba(0,0,0,0)", orientation="h",
-                    yanchor="bottom", y=1.02, xanchor="right", x=1),
-        margin=dict(l=50, r=20, t=60, b=50),
+        legend=dict(font=dict(color=FONT_COLOR, size=10),
+                    bgcolor="rgba(0,0,0,0)", orientation="v",
+                    yanchor="top", y=0.99, xanchor="left", x=1.02),
+        margin=dict(l=50, r=120, t=60, b=50),
         dragmode="select", uirevision="v1",
     )
     return fig
@@ -461,38 +515,50 @@ def render_v2(leagues, positions, age_range, selected):
 )
 def render_v3(leagues, positions, age_range, selected):
     fdf = df[apply_filters(leagues, positions, age_range)]
+    # Filter to players with ≥450 minutes to avoid inflated per-90 rates
+    fdf = fdf[fdf["Playing Time_Min"] >= 450]
     fig = go.Figure()
 
     for pos in POSITIONS:
         sub = fdf[fdf["Position"] == pos]
         if sub.empty:
             continue
-        opac  = opacity_list(sub.index, selected)
-        pos_x = [POSITIONS.index(pos) + _jitter_map[i] for i in sub.index]
 
-        fig.add_trace(go.Scatter(
-            x=pos_x,
-            y=sub["Per 90 Minutes_Gls"],
-            mode="markers",
-            name=pos,
-            customdata=list(zip(
-                sub.index, sub["Player"], sub["Squad"],
-                sub["League"], sub["Performance_Gls"]
-            )),
-            marker=dict(
-                color=POSITION_COLORS[pos],
-                size=5,
-                opacity=opac,
-                line=dict(width=0),
-            ),
-            hovertemplate=(
-                "<b>%{customdata[1]}</b><br>"
-                "Club: %{customdata[2]}<br>"
-                "League: %{customdata[3]}<br>"
-                "Season goals: %{customdata[4]}<br>"
-                "Goals/90: %{y:.2f}<extra></extra>"
-            ),
-        ))
+        # Dots coloured by Age Band (ordinal: sequential blue ramp light→dark)
+        for band in AGE_BAND_ORDER:
+            band_sub = sub[sub["Age Band"] == band]
+            if band_sub.empty:
+                continue
+            opac  = opacity_list(band_sub.index, selected)
+            pos_x = [POSITIONS.index(pos) + _jitter_map[i] for i in band_sub.index]
+            fig.add_trace(go.Scatter(
+                x=pos_x,
+                y=band_sub["Per 90 Minutes_Gls"],
+                mode="markers",
+                name=band,
+                legendgroup=band,
+                showlegend=(pos == POSITIONS[0]),
+                customdata=list(zip(
+                    band_sub.index, band_sub["Player"], band_sub["Squad"],
+                    band_sub["League"], band_sub["Performance_Gls"],
+                    band_sub["Age"], band_sub["Playing Time_Min"]
+                )),
+                marker=dict(
+                    color=AGE_BAND_COLORS[band],
+                    size=5,
+                    opacity=opac,
+                    line=dict(width=0),
+                ),
+                hovertemplate=(
+                    "<b>%{customdata[1]}</b><br>"
+                    "Club: %{customdata[2]}<br>"
+                    "League: %{customdata[3]}<br>"
+                    "Age: %{customdata[5]} (" + band + ")<br>"
+                    "Minutes: %{customdata[6]:.0f}<br>"
+                    "Season goals: %{customdata[4]}<br>"
+                    "Goals/90: %{y:.2f}<extra></extra>"
+                ),
+            ))
 
         # Median line per position group
         med     = sub["Per 90 Minutes_Gls"].median()
@@ -500,20 +566,22 @@ def render_v3(leagues, positions, age_range, selected):
         fig.add_shape(type="line",
                       x0=pos_idx - 0.35, x1=pos_idx + 0.35,
                       y0=med, y1=med,
-                      line=dict(color=POSITION_COLORS[pos], width=2.5))
+                      line=dict(color="#ffffff", width=2.5))
 
     fig.update_layout(
         title=dict(
             text="Goal-Scoring Efficiency by Position  "
-                 "(each dot = one player · line = median)",
+                 "(≥450 min · dot colour = age band · line = median)",
             font=dict(color=FONT_COLOR, size=14), x=0, xanchor="left"),
         xaxis=dict(tickvals=list(range(len(POSITIONS))), ticktext=POSITIONS,
                  title="", **{**AXIS_STYLE, "gridcolor": "rgba(0,0,0,0)"}),
         yaxis=dict(title="Goals per 90 Minutes", **AXIS_STYLE),
         plot_bgcolor=PLOT_BG, paper_bgcolor=PAPER_BG,
         font=dict(color=FONT_COLOR, family=FONT_FAMILY),
-        showlegend=False,
-        margin=dict(l=60, r=20, t=50, b=50),
+        legend=dict(title="Age Band", font=dict(color=FONT_COLOR, size=10),
+                    bgcolor="rgba(0,0,0,0)", orientation="h",
+                    yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=60, r=20, t=60, b=50),
         dragmode="select", uirevision="v3",
     )
     return fig
