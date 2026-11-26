@@ -190,6 +190,7 @@ app.layout = html.Div(
         ], style={"marginBottom": "20px"}),
 
         # Filter bar — Gestalt: proximity groups all controls together
+        html.Div([
             html.Div([
                 html.Label("League", style={"color": "#aaaaaa", "fontSize": "12px",
                                             "marginBottom": "4px", "display": "block"}),
